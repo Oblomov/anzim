@@ -109,8 +109,8 @@ The world randomly generates food, using the following algorithm:
 * at every turn, a row, column pair (R, C) is randomly selected,
   following the respective weights;
 * if all food package slots at (R, C) are full, or there is an ant in
-  the cell, no food is generated for this turn; otherwise, a pair of
-  random numbers (RX, CX) in (-1, 0, 1) are picked;
+  the cell, or the cell is a nest, no food is generated for this turn;
+  otherwise, a pair of random numbers (RX, CX) in (-1, 0, 1) are picked;
 * if RX = CX = 0 then a food package is generated at cell (R, C),
   otherwise no food is generated for this turn;
 * if a food package is generated, its size is randomly picked based on
