@@ -34,19 +34,37 @@ module ANZIM
 			@nest = _nest
 			@id = _id
 			@cell = nest.cell
+			# ant health
+			@health = @nest.world.options[:af]
+			# carried food
+			@food = 0
 		end
 	end
 
 	class Nest
-		attr_reader :cell
+		attr_reader :world, :cell
 		attr :food
-		def initialize(world, _cell)
+		def initialize(_world, _cell)
+			@world = _world
 			@cell = _cell
 			@next_ant = 0
 			# start with enough food to generate a line of ants as long
 			# as the world
-			@food = world.options[:af]*world.options[:ws]
+			@food = @world.options[:af]*@world.options[:ws]
 		end
+
+		# generate ant. this is called by the world if there aren't
+		# already two ants on the cell
+		def generate_ant
+			ant = nil
+			if @food >= @world.options[:af]
+				ant = Ant.new(self, @next_ant)
+				@food -= @world.options[:af]
+				@next_ant +=1
+			end
+			return ant
+		end
+
 	end
 
 	class World
@@ -107,6 +125,19 @@ module ANZIM
 			nn = Nest.new(self, cc)
 			cc.nest = nn
 			@nests << nn
+		end
+
+		# generate ants
+		# TODO conflict resolution
+		def generate_ants
+			@nests.each do |n|
+				if n.cell.ants.length < 2
+					ant = n.generate_ant # generate an ant
+					next if ant.nil? # could not generate (not enough food)
+					@ants << ant
+					n.cell.ants << ant
+				end
+			end
 		end
 
 		# add food at index idx of cell c
@@ -306,10 +337,12 @@ if __FILE__ == $0
 
 	world = ANZIM::World.new(ws: 8)
 	world.generate_nest
+	world.display
 
 	while true
 		world.generate_food
-		# blahb alh
+		world.generate_ants
+		# blah blah
 		world.display
 	end
 
