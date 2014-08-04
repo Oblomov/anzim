@@ -16,14 +16,36 @@ module ANZIM
 
 	class Cell
 		attr_reader :row, :col
-		attr_reader :nest, :ants, :food
+		attr_reader :ants, :food
+		attr_accessor :nest
 		def initialize(world, rowcol)
 			@row = rowcol.first
 			@col = rowcol.last
 			@nest = nil # index of the nest in the cell, nil if none
-			@ants = [nil, nil] # indices of the ants in the cells, nil if none
+			@ants = [] # indices of the ants in the cells, if any
 			# number of food packages of each kind, plus dead ants (at index 0)
 			@food = Array.new(world.options[:nfp] + 1, 0)
+		end
+	end
+
+	class Ant
+		attr_reader :nest, :id, :cell
+		def initialize(_nest, _id)
+			@nest = _nest
+			@id = _id
+			@cell = nest.cell
+		end
+	end
+
+	class Nest
+		attr_reader :cell
+		attr :food
+		def initialize(world, _cell)
+			@cell = _cell
+			@next_ant = 0
+			# start with enough food to generate a line of ants as long
+			# as the world
+			@food = world.options[:af]*world.options[:ws]
 		end
 	end
 
@@ -40,6 +62,10 @@ module ANZIM
 			@world = Hash.new { |h, rowcol|
 				h[rowcol] = Cell.new(self, rowcol)
 			}
+
+			# nests
+			@nests = []
+			@ants = []
 
 			# food generation is probabilistic, and based on the amount of
 			# food on each row/col. However, to simplify the calculation,
@@ -68,6 +94,19 @@ module ANZIM
 		# cell at (row, col)
 		def cell(row, col)
 			@world[ self.rc(row, col) ]
+		end
+
+		# generate a new nest
+		def generate_nest
+			ws = @options[:ws]
+			r = rand(ws)
+			c = rand(ws)
+			# TODO in the future, when nests may be generated at runtime,
+			# we should check that there are no food or ants in the place
+			cc = self.cell(r, c)
+			nn = Nest.new(self, cc)
+			cc.nest = nn
+			@nests << nn
 		end
 
 		# add food at index idx of cell c
@@ -128,6 +167,12 @@ module ANZIM
 			puts "( %u/%u, %u/%u )" % [rowcand, ws, colcand, ws]
 
 			cc = self.cell(rowcand, colcand)
+
+			# only generate food if not nest and there are no ants
+			unless cc.nest.nil? and cc.ants.empty?
+				puts "nest: %s, ants: %s => bailing" % [cc.nest, cc.ants]
+				return
+			end
 
 			# we generate a random package among the ones available
 			# to do this, we create an array of the available indices
@@ -207,13 +252,8 @@ module ANZIM
 						antline = padline
 					else
 						antline = "| "
-						cc.ants.each do |a|
-							if a.nil?
-								antline << " "
-							else
-								antline << "*"
-							end
-						end
+						antline << ("*" * cc.ants.length)
+						antline << (" " * (2 - cc.ants.length))
 						cc.food.first do |a|
 							antline << case a
 							when 0
@@ -265,6 +305,7 @@ end
 if __FILE__ == $0
 
 	world = ANZIM::World.new(ws: 8)
+	world.generate_nest
 
 	while true
 		world.generate_food
