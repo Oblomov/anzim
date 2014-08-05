@@ -28,6 +28,10 @@ module ANZIM
 			@food = Array.new(world.options[:nfp] + 1, 0)
 			@tracer = 0
 		end
+
+		def evaporate
+			@tracer /= 2
+		end
 	end
 
 	class Ant
@@ -542,7 +546,7 @@ module ANZIM
 		# evaporate tracer
 		def evaporate
 			@world.each do |rowcol, cell|
-				cell.tracer /= 2
+				cell.evaporate
 			end
 		end
 
@@ -668,6 +672,8 @@ module ANZIM
 			self.add_food(cc, idx)
 		end
 
+		ANTID = ('0'..'9').to_a + ('a'..'z').to_a + ('A'..'Z').to_a
+
 		# show the world
 		def display
 			# world size
@@ -729,7 +735,9 @@ module ANZIM
 						antline = padline
 					else
 						antline = "| "
-						antline << ("*" * cc.ants.length)
+						cc.ants.each do |ant|
+							antline << ANTID[ant.id % ANTID.length]
+						end
 						antline << (" " * (2 - cc.ants.length))
 						antline << case cc.food.first
 						when 0
@@ -746,7 +754,7 @@ module ANZIM
 							" "
 						else
 							tracer = Math.log2(cc.tracer).to_i
-							tracer = [[0, tracer].max, 7].max
+							tracer = [[0, tracer].max, 7].min
 							[0x2581 + tracer].pack("U")
 						end
 						antline << " " while antline.length < hstep
@@ -789,6 +797,11 @@ if __FILE__ == $0
 
 	world = ANZIM::World.new(ws: 8)
 	world.generate_nest
+	world.options[:ws].times do
+		world.generate_food
+		world.generate_food
+		world.generate_food
+	end
 	world.display
 
 	puts "simulation starts now"
