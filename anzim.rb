@@ -42,14 +42,21 @@ module ANZIM
 			[1, 0],
 			[1, -1],
 			[0, -1]]
+		# weights for the directions, from the one we came from
+		WEIGHTS = [
+			1, 2, 4, 8, 16, 8, 4, 2
+		]
+
 
 		attr_reader :nest, :id, :cell, :food, :health
 		attr_reader :last_motion_weight, :last_motion_dir
+		attr_reader :prev_cell
 		def initialize(_nest, _id)
 			@world = _nest.world
 			@nest = _nest
 			@id = _id
 			@cell = nest.cell
+			@prev_cell = @cell
 			# ant health
 			@health = @world.options[:af]
 			# carried food
@@ -62,6 +69,57 @@ module ANZIM
 			# direction of the last motion taken, used to
 			# resolve conflicts in picking up food
 			@last_motion_dir = [0, 0]
+		end
+
+		# decrease health by 1
+		def lived
+			@health -= 1
+		end
+
+		# die
+		def die
+			throw "I cannot die now!" if @food
+			@cell.ants.delete self
+			@cell.food[0] += 1
+		end
+
+		# returns 1 if the ant has food, 0 otherwise
+		# used for conflict resolution
+		# use 1 and 0 so that results can be compared with <=>
+		def has_food
+			return 1 if @food > 0
+			return 0
+		end
+
+		# returns 1 if the ant was in the cell already, 0 otherwise
+		# used for conflict resolution
+		# use 1 and 0 so that results can be compared with <=>
+		def was_there
+			return 1 if @cell == @prev_cell
+			return 0
+		end
+
+		# returns 1 if a direction is horizontal or vertical,
+		# 0 if it's diagonal
+		# used for conflict resolution
+		# use 1 and 0 so that results can be compared with <=>
+		def is_horzvert(dir)
+			return 1 if dir.first == 0 or dir.last == 0
+			return 0
+		end
+
+		# returns 1 if the ant moved into the current cell from
+		# a horizontally or vertically adjacent cell, 0 if it
+		# moved in diagonally
+		# used for conflict resolution
+		# use 1 and 0 so that results can be compared with <=>
+		def last_motion_horzvert
+			return is_horzvert(@last_motion_dir)
+		end
+
+		# check if we are hungry
+		def hungry?
+			@health < @world.options[:af]/2
 		end
 
 		# decide what to do on this turn
@@ -78,7 +136,7 @@ module ANZIM
 				# (4) else move
 				if other and other.food == 0 and cell_food == 0 and other.health < (@health+1)/2
 					return [:pass_food, other]
-				elsif @health < @world.options[:af]/2
+				elsif self.hungry?
 					return [:eat_food]
 				elsif @cell.nest == @nest
 					return [:drop_food, @food]
@@ -126,8 +184,80 @@ module ANZIM
 			puts "ant %s: %u/%u in %s => %u" % [self, where, total, weights, dircand]
 			return [:moveto, @dir_weight[dircand], DIR[dircand], @world.cell_off(@cell.rowcol, DIR[dircand])]
 		end
-	end
 
+		# actual ant actions follow
+
+		# pass food to other ant. parameter 'other' isn't really used
+		def pass_food(other, _food)
+			@food = _food
+			self.flip_weights
+		end
+
+		# get food from other ant: works exactly the same way as pass_food
+		# but we also check if we are hungry, and eat if necessary
+		def pass_food(other, _food)
+			@food = _food
+			self.flip_weights
+			self.eat_food if self.hungry?
+		end
+
+		# eat food
+		def eat_food
+			missing = @world.options[:af] - @health
+			eats = [missing, @food].min
+			@food -= eats
+			@health += eats
+			if @food == 0
+				self.flip_weights # we lost all our food, go back
+			else
+				self.stay
+			end
+		end
+
+		# drop food to nest. parameter not really used
+		def drop_food(food)
+			@cell.nest.food += @food
+			@food = 0
+			self.flip_weights
+		end
+
+		# pick food from cell (and eat if hungry)
+		def pick_food(cell, index)
+			@cell.food[index] -= 1
+			if index == 0
+				@food = @world.options[:af]
+			else
+				index -= 1
+				@food = @world.options[:sf]*(2**index)
+			end
+			self.flip_weights
+			self.eat_food if self.hungry?
+		end
+
+		# after picking or dropping or passing food, all weights must be reversed
+		def flip_weights
+			@dir_weight.rotate! 4
+			self.stay # we didn't change cell
+		end
+
+		# things to do when we didn't change cell
+		def stay
+			@prev_cell = @cell
+		end
+
+		# move to other cell
+		def moveto(weight, dir, newcell)
+			@cell.tracer += 256
+			@cell.ants.delete self
+			@cell = newcell
+			@cell.ants << self
+
+			@prev_cell = @cell
+			@dir_weight.replace WEIGHTS.rotate(4 - DIR.index(dir))
+			@last_motion_weight = weight
+			@last_motion_dir = dir
+		end
+	end
 
 	class Nest
 		attr_reader :world, :cell
@@ -222,18 +352,20 @@ module ANZIM
 
 		# gather ant choices
 		def gather_actions
+			return {} if @ants.empty?
+
 			candidate = {}
 			accepted = {}
 			discarded = {}
 			# cell-indexed potential conflicts
-			pick_conflicts = Hash.new { |h, k| Hash.new }
-			motion_conflicts = Hash.new { |h, k| Hash.new }
+			pick_conflicts = Hash.new { |h, k| h[k] = Hash.new }
+			motion_conflicts = Hash.new { |h, k| h[k] = Hash.new }
 
 			@ants.each do |a|
 				candidate[a] = a.ponder_action
 			end
 
-			while aa = candidate.shift do
+			while (aa = candidate.shift)
 				puts "%s => %s" % aa
 				ant, action = aa
 				case action.first
@@ -244,6 +376,7 @@ module ANZIM
 					if other_action.first != :get_food or other_action.last != ant
 						throw "inconsistent actions! %s / %s vs %s / %s" % [ant, action, action.last, other_action]
 					else
+						action << other.food # should be 0
 						accepted[ant] = action
 					end
 				when :get_food
@@ -251,6 +384,7 @@ module ANZIM
 					if other_action.first != :pass_food or other_action.last != ant
 						throw "inconsistent actions! %s / %s vs %s / %s" % [ant, action, action.last, other_action]
 					else
+						action << other.food
 						accepted[ant] = action
 					end
 				when :moveto
@@ -262,10 +396,178 @@ module ANZIM
 
 			throw "wtf candidate" unless candidate.empty?
 
-			# solve pick conflicts
-			# TODO
+			puts "accepted: %s" % [accepted]
+			puts "discarded: %s" % [discarded]
+			puts "picks: %s" % [pick_conflicts]
+			puts "motions: %s"% [motion_conflicts]
+
+			# solve pick conflicts. this is quite easy, since each cell can be handled independently
+			while (pc = pick_conflicts.shift)
+				break if pc.empty?
+				puts "%s => %s" % pc
+				cell, aa = pc
+				food_indices = []
+				cell.food.each_with_index do |v, i|
+					v.times { food_indices << i }
+				end
+				# sort ants by priority
+				ants = aa.keys.sort do |a1, a2|
+					# who was there has priority
+					cond = (a1.was_there <=> a2.was_there)
+					# horz/vert motion has priority
+					cond = (a1.last_motion_horzvert <=> a2.last_motion_horzvert) if cond == 0
+					# higher weight in last motion has priority
+					cond = (a1.last_motion_weight <=> a2.last_motion_weight) if cond == 0
+					# younger (higher id) has priority
+					cond = (a1.id <=> a2.id) if cond == 0
+					throw "wtf %s <=> %s" % [a1, a2] if cond == 0
+					cond
+				end
+				puts "%s <= %s" % [ants, food_indices]
+				# assign available food indices to ants following priority
+				until food_indices.empty? do
+					ant = ants.pop
+					fi = food_indices.pop
+					action = aa[ant]
+					action << fi
+					accepted[ant] = action
+				end
+				# if there are any remaining ants, discard them
+				until ants.empty? do
+					ant = ants.pop
+					action = aa[ant]
+					discarded[ant] = action
+				end
+			end
+
 			# solve motion conflicts
-			# TODO
+			# this is way more delicate, since there is the possibility
+			# that cycles will form
+			# we start by eliminating the obviously accepted/discarded ones
+			# this must be done iteratively, since it requires knowledge about
+			# the ants that move out of the cell
+			changed = true
+			while changed
+				changed = false
+				motion_conflicts.each do |cell, aa|
+					wanting = aa.size
+
+					puts "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
+
+					# count the number of places that are surely available
+					# and the number of places that are surely NOT available
+					available = 2 - cell.ants.length
+					blocked = 0
+					# increment the number of available places by the number
+					# of ants in the target cell which are moving away
+					cell.ants.each do |a|
+						# if the ant is known to be moving out, increment availability
+						# if it's known to NOT be moving out, increment block
+						if accepted[a]
+							if accepted[a].first == :moveto
+								available += 1
+							else
+								blocked += 1
+							end
+							next
+						end
+						# increment block also if the ant had a :moveto plan that was discarded
+						blocked += 1 if discarded[a] and discarded[a].first == :moveto
+					end
+					# increment block also if cell is a nest with enough food to generate a new ant
+					blocked += 1 if cell.nest and cell.nest.food >= @options[:af]
+					# finally, increment blocked and decrement available by all accepted ants that want to move here
+					accepted.each do |ant, action|
+						if action.first == :moveto and action.last == cell
+							available -= 1
+							blocked += 1
+						end
+					end
+
+					puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, wanting]
+
+					# if everything is blocked, discard all
+					if blocked >= 2
+						discarded.merge! aa
+						motion_conflicts.delete cell
+						changed = true
+						puts "blocked, discarding wanting"
+						next
+					end
+
+					# if there's room for everybody, go for it
+					if wanting <= available
+						accepted.merge! aa
+						motion_conflicts.delete cell
+						changed = true
+						puts "available, accepting all"
+						next
+					end
+
+					# if there are no known available places, skip (can't do nothing to solve conflict yet)
+					next if available == 0
+
+					# finally, we get here if there is room for one ant to move in, and we need to find which
+					# sort ants by priority
+					ant = aa.keys.sort do |a1, a2|
+						# horz/vert motion has priority
+						cond = (a1.is_horzvert(aa[a1][2]) <=> a2.is_horzvert(aa[a2][2]))
+						# with food has higher priortiy
+						cond = (a1.has_food <=> a2.has_food) if cond == 0
+						# lower health has higher priority (note the a1/a2 swap)
+						cond = (a2.health <=> a1.health) if cond == 0
+						# higher weight in motion has priority
+						cond = (aa[a1][1] <=> aa[a2][1]) if cond == 0
+						# younger (higher id) has priority
+						cond = (a1.id <=> a2.id) if cond == 0
+						throw "wtf %s <=> %s" % [a1, a2] if cond == 0
+						cond
+					end.last
+
+					accepted[ant] = aa[ant]
+					aa.delete ant
+					puts "accepting %s" % [ant.id]
+					changed = true
+				end
+			end
+			# TODO loop detection/handling
+			throw NotImplementedError, "loop detection" if motion_conflicts.size > 0
+
+			puts discarded
+			puts accepted
+
+			return accepted
+		end
+
+		# evaporate tracer
+		def evaporate
+			@world.each do |rowcol, cell|
+				cell.tracer /= 2
+			end
+		end
+
+		# decrease health on all ants by 1, check if they died,
+		# act accordingly
+		def ant_life
+			@ants.each do |ant|
+				ant.lived
+				if ant.health < 0
+					ant.die
+					@ants.delete ant
+				end
+			end
+		end
+
+		# process valid actions
+		def process_actions(accepted)
+			@ants.each do |ant|
+				if accepted.key? ant
+					action = accepted[ant]
+					ant.send(*action)
+				else
+					ant.stay
+				end
+			end
 		end
 
 		# generate ants
@@ -371,9 +673,10 @@ module ANZIM
 			# world size
 			ws = @options[:ws]
 			# cell width: take into account food packages (top row)
-			# and live/dead ants (bottom row)
+			# and live/dead ants/tracer (bottom row)
+			# add 5 for tracer/nest food amount
 			# add 2 for padding
-			cw = [@options[:nfp], 4].max + 2
+			cw = [@options[:nfp], 5].max + 2
 			ch = 4 # padding, food packages, ants, padding
 
 			# horizontal/vertical step, taking border into account
@@ -403,6 +706,8 @@ module ANZIM
 
 					if cc.nil?
 						foodline = padline
+					elsif nest
+						foodline = "| %#{cw-2}u " % nest.food
 					else
 						foodline = "| "
 						cc.food.drop(1).each do |np|
@@ -426,17 +731,23 @@ module ANZIM
 						antline = "| "
 						antline << ("*" * cc.ants.length)
 						antline << (" " * (2 - cc.ants.length))
-						cc.food.first do |a|
-							antline << case a
-							when 0
-								"  "
-							when 1
-								"x "
-							when 2
-								"xx"
-							else
-								throw "too many dead ants @ (%u, %u)" % [row, col]
-							end
+						antline << case cc.food.first
+						when 0
+							"  "
+						when 1
+							"x "
+						when 2
+							"xx"
+						else
+							throw "too many dead ants @ (%u, %u)" % [row, col]
+						end
+						antline << case cc.tracer
+						when 0
+							" "
+						else
+							tracer = Math.log2(cc.tracer).to_i
+							tracer = [[0, tracer].max, 7].max
+							[0x2581 + tracer].pack("U")
 						end
 						antline << " " while antline.length < hstep
 					end
@@ -480,12 +791,16 @@ if __FILE__ == $0
 	world.generate_nest
 	world.display
 
+	puts "simulation starts now"
+
 	while true
 		world.generate_food
-		world.gather_actions
+		world.evaporate
+		world.process_actions world.gather_actions
+		world.ant_life
 		world.generate_ants
-		# blah blah
 		world.display
+		STDOUT.flush
 	end
 
 end

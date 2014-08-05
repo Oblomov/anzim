@@ -38,7 +38,8 @@ An ant carrying a package of food will pass it to an ant not carrying
 food and with not more than half (round up) of its health. Picking up,
 dropping (at the nest) or exchanging food costs one turn. One unit of
 food can restore one unit of health. Eating food costs one turn, but in
-a turn an ant can eat as much food as needed to restore health.
+a turn an ant can eat as much food as needed to restore health. An ant
+can pick food and eat it in the same turn.
 
 ## Motion
 
@@ -46,7 +47,7 @@ Ants move randomly. Cells with higher tracer have higher probability.
 Ants will prefer moving in the same direction they came from.
 Specifically, each cell will have a weight d×(t+d), where t is the
 amount of tracer in the cell and d is the direction weight, ranging from
-1 (cell the ant came from) to 32 (cell opposite the one the ant came
+1 (cell the ant came from) to 16 (cell opposite the one the ant came
 from) in multiples of 2
 
 Ants born at the nest will have d=1 for all cells. Ants that just picked
