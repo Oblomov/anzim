@@ -44,6 +44,7 @@ module ANZIM
 			[0, -1]]
 
 		attr_reader :nest, :id, :cell, :food, :health
+		attr_reader :last_motion_weight, :last_motion_dir
 		def initialize(_nest, _id)
 			@world = _nest.world
 			@nest = _nest
@@ -55,6 +56,12 @@ module ANZIM
 			@food = 0
 			# weight of each direction. initially, all equal
 			@dir_weight = Array.new(8, 1)
+			# weight of the last motion taken, used to
+			# resolve conflicts in picking up food
+			@last_motion_weight = 0
+			# direction of the last motion taken, used to
+			# resolve conflicts in picking up food
+			@last_motion_dir = [0, 0]
 		end
 
 		# decide what to do on this turn
@@ -117,7 +124,7 @@ module ANZIM
 				sum
 			end
 			puts "ant %s: %u/%u in %s => %u" % [self, where, total, weights, dircand]
-			return [:moveto, @world.cell_off(@cell.rowcol, DIR[dircand])]
+			return [:moveto, @dir_weight[dircand], DIR[dircand], @world.cell_off(@cell.rowcol, DIR[dircand])]
 		end
 	end
 
