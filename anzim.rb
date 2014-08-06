@@ -253,10 +253,10 @@ module ANZIM
 		def moveto(weight, dir, newcell)
 			@cell.tracer += 256
 			@cell.ants.delete self
+			@prev_cell = @cell
 			@cell = newcell
 			@cell.ants << self
 
-			@prev_cell = @cell
 			@dir_weight.replace WEIGHTS.rotate(4 - DIR.index(dir))
 			@last_motion_weight = weight
 			@last_motion_dir = dir
