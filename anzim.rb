@@ -4,8 +4,6 @@
 ANZIM world food generation routine
 =end
 
-require 'pp'
-
 module ANZIM
 
 	DEFAULTS = {
@@ -480,8 +478,6 @@ module ANZIM
 			while changed
 				changed = false
 				motion_conflicts.each do |cell, aa|
-					wanting = aa.size
-
 					puts "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
 
 					# count the number of places that are surely available
@@ -506,6 +502,7 @@ module ANZIM
 					end
 					# increment block also if cell is a nest with enough food to generate a new ant
 					blocked += 1 if cell.nest and cell.nest.food >= @options[:af]
+
 					# finally, increment blocked and decrement available by all accepted ants that want to move here
 					accepted.each do |ant, action|
 						if action.first == :moveto and action.last == cell
@@ -514,32 +511,13 @@ module ANZIM
 						end
 					end
 
-					puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, wanting]
+					puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, aa.size]
 
-					# if everything is blocked, discard all
-					if blocked >= 2
-						discarded.merge! aa
-						motion_conflicts.delete cell
-						changed = true
-						puts "blocked, discarding wanting"
-						next
-					end
+					throw "wtf avail/block" if available < 0 or available > 2 or blocked < 0 or blocked > 2
 
-					# if there's room for everybody, go for it
-					if wanting <= available
-						accepted.merge! aa
-						motion_conflicts.delete cell
-						changed = true
-						puts "available, accepting all"
-						next
-					end
-
-					# if there are no known available places, skip (can't do nothing to solve conflict yet)
-					next if available == 0
-
-					# finally, we get here if there is room for one ant to move in, and we need to find which
-					# sort ants by priority
-					ant = aa.keys.sort do |a1, a2|
+					# sort ants by priority, to make it easier to cut out the ones that
+					# can surely move in and those that surely cannot
+					ants = aa.keys.sort do |a1, a2|
 						# horz/vert motion has priority
 						cond = (a1.is_horzvert(aa[a1][2]) <=> a2.is_horzvert(aa[a2][2]))
 						# with food has higher priortiy
@@ -552,16 +530,53 @@ module ANZIM
 						cond = (a1.id <=> a2.id) if cond == 0
 						throw "wtf %s <=> %s" % [a1, a2] if cond == 0
 						cond
-					end.last
+					end
 
-					accepted[ant] = aa[ant]
-					aa.delete ant
-					puts "accepting %s" % [ant.id]
-					changed = true
+					puts "sorted: %s" % [ants.map { |a| a.id }]
+
+					# discard anything but the last 2, regardless of all other conditions
+					while ants.length > 2
+						ant = ants.shift
+						discarded[ant] = aa[ant]
+						aa.delete ant
+						puts "discarding %s, in excess" % [ant.id]
+						changed = true
+					end
+
+					# now accept the ants we can accept (from the top)
+					while available > 0 and not ants.empty?
+						ant = ants.pop
+						accepted[ant] = aa[ant]
+						aa.delete ant
+						puts "accepting %s, available" % [ant.id]
+						# update avail/block
+						available -= 1
+						blocked += 1
+						changed = true
+					end
+
+					# now discard from the bottom the blocked ones
+					while blocked > 0 and not ants.empty?
+						ant = ants.shift
+						discarded[ant] = aa[ant]
+						aa.delete ant
+						puts "discarding %s, blocked" % [ant.id]
+						blocked -= 1
+						changed = true
+					end
+
+					motion_conflicts.delete cell if ants.empty?
+
 				end
 			end
 			if motion_conflicts.size > 0
-				pp motion_conflicts
+				motion_conflicts.each do |cell, aa|
+					ants = aa.keys
+					puts "%s => %s" % [
+						ants.map { |a| [a.id, a.cell] },
+						cell
+					]
+				end
 				STDOUT.flush
 				throw NotImplementedError, "loop detection"
 			end
