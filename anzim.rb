@@ -36,7 +36,7 @@ module ANZIM
 		def to_s
 			"#<%s @rowcol=%s @food=%s @tracer=%u @nest=%s @ants=%s>" % [
 				self.class, @rowcol, @food, @tracer,
-				@nest, @ants
+				!@nest.nil?, @ants.map { |a| a.id }
 			]
 		end
 	end
@@ -84,9 +84,8 @@ module ANZIM
 
 		def to_s
 			"#<%s @nest=%s @id=%u @health=%u @food=%u @cell=%s @prev_cell=%s last_motion=%s/%u>" % [
-				self.class,
-				@nest, @id,
-				@health, @food,
+				self.class, @nest ? @nest.cell.rowcol : 'nil',
+				@id, @health, @food,
 				@cell.rowcol, @prev_cell.rowcol,
 				@last_motion_dir, @last_motion_weight
 			]
@@ -575,7 +574,7 @@ module ANZIM
 				motion_conflicts.each do |cell, aa|
 					ants = aa.keys
 					puts "%s => %s" % [
-						ants.map { |a| [a.id, a.cell] },
+						ants.map { |a| [a.id, a.cell.rowcol] },
 						cell
 					]
 				end
