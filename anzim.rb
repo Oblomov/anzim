@@ -165,13 +165,18 @@ module ANZIM
 		# where do we wan to go today?
 		def ponder_motion
 			# build weight of each direction, multiplying the
-			# dir_weight by the amount of tracer in the
-			# cell
+			# dir_weight by the amount of tracer in the cell
 			dircand = -1
 			weights = []
 			total = 0
 			@dir_weight.each_with_index do |d, i|
-				t = @world.cell_off(@cell.rowcol, DIR[i]).tracer
+				# get amount of tracer
+				nc = @world.cell_off(@cell.rowcol, DIR[i])
+				t = nc.tracer
+				# decrease by half the ant tracer if it was the cell we
+				# just came from
+				t -= @world.options[:at]/2 if @prev_cell == nc
+				# consider our direction weights
 				w = d*(t+d)
 				weights << w
 				total += w
