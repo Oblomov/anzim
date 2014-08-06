@@ -249,14 +249,13 @@ module ANZIM
 
 		# pick food from cell (and eat if hungry)
 		def pick_food(cell, index)
-			@cell.food[index] -= 1
 			if index == 0
 				@food = @world.options[:af]
+				@cell.food[index] -= 1
 			else
-				index -= 1
-				@food = @world.options[:sf]*(2**index)
-				puts "ant %u picks food package size %u, food now %u" % [@id, index + 1, @food]
+				@food = @world.remove_food(@cell, index)
 			end
+			puts "ant %u picks food package size %u, food now %u" % [@id, index, @food]
 			self.flip_weights
 			self.eat_food if self.hungry?
 		end
@@ -648,6 +647,25 @@ module ANZIM
 			@colchance[c.col] += 1
 			@colchance[(c.col + 1)%ws] += 1
 			@colchancetotal += 3
+		end
+
+		# remove food at index idx of cell c
+		# return amount of food
+		def remove_food(c, idx)
+			ws = @options[:ws]
+			c.food[idx] -= 1
+
+			@rowchance[(c.row - 1)%ws] -= 1
+			@rowchance[c.row] -= 1
+			@rowchance[(c.row + 1)%ws] -= 1
+			@rowchancetotal -= 3
+
+			@colchance[(c.col - 1)%ws] -= 1
+			@colchance[c.col] -= 1
+			@colchance[(c.col + 1)%ws] -= 1
+			@colchancetotal -= 3
+
+			return @options[:sf]*(2**(idx-1))
 		end
 
 		def generate_food
