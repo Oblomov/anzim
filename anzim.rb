@@ -270,7 +270,7 @@ module ANZIM
 
 	class Nest
 		attr_reader :world, :cell
-		attr :food
+		attr_accessor :food
 		def initialize(_world, _cell)
 			@world = _world
 			@cell = _cell
