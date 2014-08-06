@@ -436,6 +436,7 @@ module ANZIM
 				# assign available food indices to ants following priority
 				until food_indices.empty? do
 					ant = ants.pop
+					break unless ant
 					fi = food_indices.pop
 					action = aa[ant]
 					action << fi
