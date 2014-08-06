@@ -534,12 +534,25 @@ module ANZIM
 
 					puts "sorted: %s" % [ants.map { |a| a.id }]
 
-					# discard anything but the last 2, regardless of all other conditions
+					# discard all but the last 2, regardless of other conditions,
+					# since there can't be more than 2 ants moving in anyway
 					while ants.length > 2
 						ant = ants.shift
 						discarded[ant] = aa[ant]
 						aa.delete ant
 						puts "discarding %s, in excess" % [ant.id]
+						changed = true
+					end
+
+					# actually, we cannot have more than 2 - blocked ants:
+					unblocked = 2 - blocked
+
+					while ants.length > unblocked
+						ant = ants.shift
+						discarded[ant] = aa[ant]
+						aa.delete ant
+						puts "discarding %s, blocked" % [ant.id]
+						blocked -= 1
 						changed = true
 					end
 
@@ -552,16 +565,6 @@ module ANZIM
 						# update avail/block
 						available -= 1
 						blocked += 1
-						changed = true
-					end
-
-					# now discard from the bottom the blocked ones
-					while blocked > 0 and not ants.empty?
-						ant = ants.shift
-						discarded[ant] = aa[ant]
-						aa.delete ant
-						puts "discarding %s, blocked" % [ant.id]
-						blocked -= 1
 						changed = true
 					end
 
