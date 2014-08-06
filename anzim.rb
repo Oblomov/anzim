@@ -4,6 +4,8 @@
 ANZIM world food generation routine
 =end
 
+require 'pp'
+
 module ANZIM
 
 	DEFAULTS = {
@@ -31,6 +33,13 @@ module ANZIM
 
 		def evaporate
 			@tracer /= 2
+		end
+
+		def to_s
+			"#<%s @rowcol=%s @food=%s @tracer=%u @nest=%s @ants=%s>" % [
+				self.class, @rowcol, @food, @tracer,
+				@nest, @ants
+			]
 		end
 	end
 
@@ -73,6 +82,16 @@ module ANZIM
 			# direction of the last motion taken, used to
 			# resolve conflicts in picking up food
 			@last_motion_dir = [0, 0]
+		end
+
+		def to_s
+			"#<%s @nest=%s @id=%u @health=%u @food=%u @cell=%s @prev_cell=%s last_motion=%s/%u>" % [
+				self.class,
+				@nest, @id,
+				@health, @food,
+				@cell.rowcol, @prev_cell.rowcol,
+				@last_motion_dir, @last_motion_weight
+			]
 		end
 
 		# decrease health by 1
@@ -190,7 +209,7 @@ module ANZIM
 				end
 				sum
 			end
-			puts "ant %s: %u/%u in %s => %u" % [self, where, total, weights, dircand]
+			puts "ant %u %s: %u/%u in %s => %u" % [@id, self, where, total, weights, dircand]
 			return [:moveto, @dir_weight[dircand], DIR[dircand], @world.cell_off(@cell.rowcol, DIR[dircand])]
 		end
 
@@ -238,6 +257,7 @@ module ANZIM
 			else
 				index -= 1
 				@food = @world.options[:sf]*(2**index)
+				puts "ant %u picks food package size %u, food now %u" % [@id, index + 1, @food]
 			end
 			self.flip_weights
 			self.eat_food if self.hungry?
@@ -540,8 +560,11 @@ module ANZIM
 					changed = true
 				end
 			end
-			# TODO loop detection/handling
-			throw NotImplementedError, "loop detection" if motion_conflicts.size > 0
+			if motion_conflicts.size > 0
+				pp motion_conflicts
+				STDOUT.flush
+				throw NotImplementedError, "loop detection"
+			end
 
 			puts discarded
 			puts accepted
@@ -759,7 +782,7 @@ module ANZIM
 						when 0
 							" "
 						else
-							tracer = Math.log2(cc.tracer).to_i
+							tracer = cc.tracer/100
 							tracer = [[0, tracer].max, 7].min
 							[0x2581 + tracer].pack("U")
 						end
