@@ -261,7 +261,7 @@ module ANZIM
 
 		# get food from other ant: works exactly the same way as pass_food
 		# but we also check if we are hungry, and eat if necessary
-		def pass_food(other, _food)
+		def get_food(other, _food)
 			@food = _food
 			self.flip_weights
 			self.eat_food if self.hungry?
