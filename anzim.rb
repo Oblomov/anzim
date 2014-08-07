@@ -345,7 +345,7 @@ module ANZIM
 		attr_reader :options
 
 		def initialize(_opts={})
-			@options = DEFAULTS.dup.merge _opts
+			@options = DEFAULTS.merge _opts
 
 			# number of possible food packages
 			@options[:nfp] = 1 + Math.log2(@options[:bf]/@options[:sf])
