@@ -491,110 +491,174 @@ module ANZIM
 			# solve motion conflicts
 			# this is way more delicate, since there is the possibility
 			# that cycles will form
-			# we start by eliminating the obviously accepted/discarded ones
-			# this must be done iteratively, since it requires knowledge about
-			# the ants that move out of the cell
-			changed = true
-			while changed
-				changed = false
-				motion_conflicts.each do |cell, aa|
-					puts "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
+			until motion_conflicts.empty?
+				# we start by eliminating the obviously accepted/discarded ones
+				# this must be done iteratively, since it requires knowledge about
+				# the ants that move out of the cell
+				changed = true
+				while changed
+					changed = false
+					motion_conflicts.each do |cell, aa|
+						puts "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
 
-					# count the number of places that are surely available
-					# and the number of places that are surely NOT available
-					available = 2 - cell.ants.length
-					blocked = 0
-					# increment the number of available places by the number
-					# of ants in the target cell which are moving away
-					cell.ants.each do |a|
-						# if the ant is known to be moving out, increment availability
-						# if it's known to NOT be moving out, increment block
-						if accepted[a]
-							if accepted[a].first == :moveto
-								available += 1
-							else
+						# count the number of places that are surely available
+						# and the number of places that are surely NOT available
+						available = 2 - cell.ants.length
+						blocked = 0
+						# increment the number of available places by the number
+						# of ants in the target cell which are moving away
+						cell.ants.each do |a|
+							# if the ant is known to be moving out, increment availability
+							# if it's known to NOT be moving out, increment block
+							if accepted[a]
+								if accepted[a].first == :moveto
+									available += 1
+								else
+									blocked += 1
+								end
+								next
+							end
+							# increment block also if the ant had a :moveto plan that was discarded
+							blocked += 1 if discarded[a] and discarded[a].first == :moveto
+						end
+						# increment block also if cell is a nest with enough food to generate a new ant,
+						# unless there already isn't any room
+						blocked += 1 if cell.nest and cell.nest.food >= @options[:af] and blocked < 2
+
+						# finally, increment blocked and decrement available by all accepted ants that want to move here
+						accepted.each do |ant, action|
+							if action.first == :moveto and action.last == cell
+								available -= 1
 								blocked += 1
 							end
-							next
 						end
-						# increment block also if the ant had a :moveto plan that was discarded
-						blocked += 1 if discarded[a] and discarded[a].first == :moveto
-					end
-					# increment block also if cell is a nest with enough food to generate a new ant
-					blocked += 1 if cell.nest and cell.nest.food >= @options[:af]
 
-					# finally, increment blocked and decrement available by all accepted ants that want to move here
-					accepted.each do |ant, action|
-						if action.first == :moveto and action.last == cell
+						puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, aa.size]
+
+						throw "wtf avail/block" if available < 0 or available > 2 or blocked < 0 or blocked > 2
+
+						# sort ants by priority, to make it easier to cut out the ones that
+						# can surely move in and those that surely cannot
+						ants = aa.keys.sort do |a1, a2|
+							Ant.motion_priority_cmp(a1, a2, aa)
+						end
+
+						puts "sorted: %s" % [ants.map { |a| a.id }]
+
+						# discard all but the last 2, regardless of other conditions,
+						# since there can't be more than 2 ants moving in anyway
+						while ants.length > 2
+							ant = ants.shift
+							discarded[ant] = aa[ant]
+							aa.delete ant
+							puts "discarding %s, in excess" % [ant.id]
+							changed = true
+						end
+
+						# actually, we cannot have more than 2 - blocked ants:
+						unblocked = 2 - blocked
+
+						while ants.length > unblocked
+							ant = ants.shift
+							discarded[ant] = aa[ant]
+							aa.delete ant
+							puts "discarding %s, blocked" % [ant.id]
+							blocked -= 1
+							changed = true
+						end
+
+						# now accept the ants we can accept (from the top)
+						while available > 0 and not ants.empty?
+							ant = ants.pop
+							accepted[ant] = aa[ant]
+							aa.delete ant
+							puts "accepting %s, available" % [ant.id]
+							# update avail/block
 							available -= 1
 							blocked += 1
+							changed = true
 						end
+
+						motion_conflicts.delete cell if ants.empty?
+
 					end
-
-					puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, aa.size]
-
-					throw "wtf avail/block" if available < 0 or available > 2 or blocked < 0 or blocked > 2
-
-					# sort ants by priority, to make it easier to cut out the ones that
-					# can surely move in and those that surely cannot
-					ants = aa.keys.sort do |a1, a2|
-						Ant.motion_priority_cmp(a1, a2, aa)
+				end
+				if motion_conflicts.size > 0
+					puts "motion conflict loop detection"
+					motion_conflicts.each do |cell, aa|
+						ants = aa.keys
+						puts "%s => %s" % [
+							ants.map { |a| [a.id, a.cell.rowcol] },
+							cell
+						]
 					end
-
-					puts "sorted: %s" % [ants.map { |a| a.id }]
-
-					# discard all but the last 2, regardless of other conditions,
-					# since there can't be more than 2 ants moving in anyway
-					while ants.length > 2
-						ant = ants.shift
-						discarded[ant] = aa[ant]
-						aa.delete ant
-						puts "discarding %s, in excess" % [ant.id]
-						changed = true
+					# loop accumulator. key is the cell,
+					# value is the ant => action map involved
+					# in the loop
+					cloop = Hash.new { |h, k| h[k] = Hash.new }
+					cell = motion_conflicts.keys.first
+					aa = motion_conflicts[cell]
+					until cloop.key? cell
+						# take the highest-priority ant
+						ant = aa.keys.sort do |a1, a2|
+							Ant.motion_priority_cmp(a1, a2, aa)
+						end.last
+						cloop[cell][ant] = aa[ant]
+						cell = ant.cell
+						# this should also be a cell involved
+						# in the conflict
+						unless motion_conflicts.key? cell
+							cloop.each do |cell, aa|
+								ants = aa.keys
+								puts "%s => %s" % [
+									ants.map { |a| [a.id, a.cell.rowcol] },
+									cell
+								]
+							end
+							STDOUT.flush
+							throw "wtf motion"
+						end
+						aa = motion_conflicts[cell]
 					end
-
-					# actually, we cannot have more than 2 - blocked ants:
-					unblocked = 2 - blocked
-
-					while ants.length > unblocked
-						ant = ants.shift
-						discarded[ant] = aa[ant]
-						aa.delete ant
-						puts "discarding %s, blocked" % [ant.id]
-						blocked -= 1
-						changed = true
+					puts "loop found"
+					# when we get there, cell is a cell in the loop
+					# we can then accept all the ant actions in the loop
+					cloop.each do |cell, aa|
+						ants = aa.keys
+						puts "%s => %s" % [
+							ants.map { |a| [a.id, a.cell.rowcol] },
+							cell
+						]
 					end
+					STDOUT.flush
+					while cloop.key? cell
+						aa = cloop[cell]
+						throw "wtf loop" if aa.size != 1
+						accepted.merge! aa
 
-					# now accept the ants we can accept (from the top)
-					while available > 0 and not ants.empty?
-						ant = ants.pop
-						accepted[ant] = aa[ant]
-						aa.delete ant
-						puts "accepting %s, available" % [ant.id]
-						# update avail/block
-						available -= 1
-						blocked += 1
-						changed = true
+						ant = aa.keys.first
+						motion_conflicts[cell].delete(ant)
+						motion_conflicts.delete cell if motion_conflicts[cell].empty?
+						cloop.delete cell
+						cell = ant.cell
 					end
-
-					motion_conflicts.delete cell if ants.empty?
-
 				end
 			end
-			if motion_conflicts.size > 0
-				motion_conflicts.each do |cell, aa|
-					ants = aa.keys
-					puts "%s => %s" % [
-						ants.map { |a| [a.id, a.cell.rowcol] },
-						cell
-					]
-				end
-				STDOUT.flush
-				throw NotImplementedError, "loop detection"
-			end
 
-			puts discarded
-			puts accepted
+			puts "discarded:"
+			discarded.each do |ant, action|
+				puts "\tant %u in %s: %s %s" % [
+					ant.id, ant.cell.rowcol,
+					action.first, action.last
+				]
+			end
+			puts "accepted:"
+			accepted.each do |ant, action|
+				puts "\tant %u in %s: %s %s" % [
+					ant.id, ant.cell.rowcol,
+					action.first, action.last
+				]
+			end
 
 			return accepted
 		end
