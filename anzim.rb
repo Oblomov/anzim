@@ -952,6 +952,148 @@ module ANZIM
 			puts dr.join("\n")
 		end
 
+		# width/height of a cell in SVG units
+		SVGU = 32
+		PADDING = SVGU/2
+		INFOW = 256
+		DIR_ANGLE = {
+			[0, 0] => 0,
+			[-1, 0] => 0,
+			[-1, -1] => -45,
+			[-1, 1] => 45,
+			[0, -1] => -90,
+			[0, 1] => 90,
+			[1, 0] => 180,
+			[1, -1] => -135,
+			[1, 1] => 135,
+		}
+		# export the world status as SVG
+		def svg(where=STDOUT)
+			ws = @options[:ws]
+
+			# add infobox width and padding
+			header = "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='-%u -%u %u %u'>" % [
+				PADDING, PADDING,
+				ws*SVGU + INFOW + 2*PADDING,
+				ws*SVGU + 2*PADDING
+			]
+			footer = "</svg>"
+			style = <<-STYLE
+			<style>
+				.ant{fill:black;stroke:red}
+				.food,.dead .ant{fill:green;stroke:darkgreen}
+				.nest{fill:navy;stroke:gray}
+				.cell{stroke:lightgray}
+				.tracer0{fill:#fff}
+				.tracer1{fill:#ffe}
+				.tracer2{fill:#ffd}
+				.tracer3{fill:#ffc}
+				.tracer4{fill:#ffb}
+				.tracer5{fill:#ffa}
+				.tracer6{fill:#ff9}
+				.tracer7{fill:#ff8}
+				.tracer8{fill:#ff7}
+				.tracer9{fill:#ff6}
+				.tracera{fill:#ff5}
+				.tracerb{fill:#ff4}
+				.tracerc{fill:#ff3}
+				.tracerd{fill:#ff2}
+				.tracere{fill:#ff1}
+				.tracerf{fill:#ff0}
+			</style>
+			STYLE
+			defs = <<-DEFS
+			<defs>
+				<polygon class='ant' id='ant' points='-5,5 5,5 0,-5'/>
+				<polygon class='food' id='food' points='-2,2 0,1 2,2 1,0 2,-2 0,-1 -2,-2 -1,0'/>
+				<rect class='cell' id='cell' x='-#{SVGU/2}' y='-#{SVGU/2}' width='#{SVGU}' height='#{SVGU}'/>
+			</defs>
+			DEFS
+
+			# cells, which are placed first
+			cells = []
+			# other elements, next
+			groups = []
+
+			ws.times do |row|
+				ws.times do |col|
+
+					cc = nil
+					nest = nil
+					if self.has_cell?(row, col)
+						cc = self.cell(row, col)
+						nest = cc.nest
+					end
+
+					cx = SVGU/2 + col*SVGU
+					cy = SVGU/2 + row*SVGU
+
+					# cell, with per-tracer background
+					if cc
+						tracer = cc.tracer/100
+						tracer = "tracer" + [[0, tracer].max, 15].min.to_s(16)
+					else
+						tracer = "tracer0"
+					end
+					cells << "<use id='cell#{row}_#{col}' x='#{cx}' y='#{cy}' class='#{tracer}' xlink:href='#cell'/>"
+
+					next unless cc # done if the cell has not been allocated yet
+
+					# stuff in the cell
+					groups << "<g id='row#{row}col#{col}' transform='translate(#{cx},#{cy})'>"
+
+					if nest
+						radius = nest.food/@options[:af]
+						radius = [[1,radius].max, SVGU/2].min
+						groups << "<circle class='nest' id='nest#{row}_#{col}' r='#{radius}'/>"
+					end
+
+					# proper food goes in the upper half, unless it's dead ants, which
+					# go in the bottom right corner
+					# offset between food elements:
+					dx = (SVGU - 2)/@options[:nfp]
+					# offset between duplicated food elements:
+					dy = SVGU/4 - 1
+					x = -SVGU/2 + dx/2 + 1
+					y = -SVGU/2 + dy/2 + 1
+					cc.food.drop(1).each_with_index do |np, idx|
+						next unless np > 0
+						scale = idx + 1
+						groups << "<use xlink:href='#food' transform='translate(#{x},#{y}) scale(#{scale})' />"
+						groups << "<use xlink:href='#food' transform='translate(#{x},#{y+dy}) scale(#{scale})' />" if np > 1
+						x += dx
+					end
+
+					# ants
+					dx = SVGU/4 - 1
+					x = -SVGU/2 + dx/2
+					y = SVGU/4
+					cc.ants.each do |ant|
+						angle = DIR_ANGLE[ant.last_motion_dir]
+						if angle != 0
+							angle = " rotate(#{angle})"
+						else
+							angle = ""
+						end
+						groups << "<use xlink:href='#ant' transform='translate(#{x},#{y})#{angle}' />"
+						x += dx
+					end
+
+					deads = cc.food.first
+					x = SVGU/2 - dx/2
+					groups << "<use class='dead' xlink:href='#ant' x='#{x}' y='#{y}' />" if deads > 0
+					groups << "<use class='dead' xlink:href='#ant' x='#{x-dx}' y='#{y}' />" if deads > 1
+
+					groups << "</g>"
+				end
+			end
+
+			svg = [header, style, defs, *cells, *groups, footer].join("\n")
+
+			where.puts svg
+
+		end
+
 	end
 
 end
@@ -965,17 +1107,27 @@ if __FILE__ == $0
 		world.generate_food
 		world.generate_food
 	end
-	world.display
+
+	iteration = 0
+
+	File.open("iteration#{iteration}.svg", 'w') do |f|
+		world.svg f
+	end
 
 	puts "simulation starts now"
 
 	while true
+		iteration += 1
 		world.generate_food
 		world.evaporate
 		world.process_actions world.gather_actions
 		world.ant_life
 		world.generate_ants
-		world.display
+
+		File.open("iteration#{iteration}.svg", 'w') do |f|
+			world.svg f
+		end
+
 		STDOUT.flush
 	end
 
