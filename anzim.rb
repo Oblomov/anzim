@@ -1118,7 +1118,8 @@ if __FILE__ == $0
 
 	iteration = 0
 
-	File.open("iteration#{iteration}.svg", 'w') do |f|
+	fname = "iteration%04u.svg" % [iteration]
+	File.open(fname, 'w') do |f|
 		world.svg f
 	end
 
@@ -1132,7 +1133,8 @@ if __FILE__ == $0
 		world.ant_life
 		world.generate_ants
 
-		File.open("iteration#{iteration}.svg", 'w') do |f|
+		fname = "iteration%04u.svg" % [iteration]
+		File.open(fname, 'w') do |f|
 			world.svg f
 		end
 
