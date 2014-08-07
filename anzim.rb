@@ -4,7 +4,17 @@
 ANZIM world food generation routine
 =end
 
+require 'logger'
+
 module ANZIM
+
+	LOGGER = Logger.new(STDERR)
+
+	if $DEBUG
+		LOGGER.sev_threshold = Logger::DEBUG
+	else
+		LOGGER.sev_threshold = Logger::INFO
+	end
 
 	DEFAULTS = {
 		ws: 1024, # world side
@@ -237,7 +247,7 @@ module ANZIM
 				end
 				sum
 			end
-			puts "ant %u %s: %u/%u in %s => %u" % [@id, self, where, total, weights, dircand]
+			LOGGER.debug "ant %u %s: %u/%u in %s => %u" % [@id, self, where, total, weights, dircand]
 			return [:moveto, @dir_weight[dircand], DIR[dircand], @world.cell_off(@cell.rowcol, DIR[dircand])]
 		end
 
@@ -285,7 +295,7 @@ module ANZIM
 			else
 				@food = @world.remove_food(@cell, index)
 			end
-			puts "ant %u picks food package size %u, food now %u" % [@id, index, @food]
+			LOGGER.debug "ant %u picks food package size %u, food now %u" % [@id, index, @food]
 			self.flip_weights
 			self.eat_food if self.hungry?
 		end
@@ -422,7 +432,7 @@ module ANZIM
 			end
 
 			while (aa = candidate.shift)
-				puts "%s => %s" % aa
+				LOGGER.debug "%s => %s" % aa
 				ant, action = aa
 				case action.first
 				when :eat_food, :drop_food
@@ -452,15 +462,15 @@ module ANZIM
 
 			throw "wtf candidate" unless candidate.empty?
 
-			puts "accepted: %s" % [accepted]
-			puts "discarded: %s" % [discarded]
-			puts "picks: %s" % [pick_conflicts]
-			puts "motions: %s"% [motion_conflicts]
+			LOGGER.debug "accepted: %s" % [accepted]
+			LOGGER.debug "discarded: %s" % [discarded]
+			LOGGER.debug "picks: %s" % [pick_conflicts]
+			LOGGER.debug "motions: %s"% [motion_conflicts]
 
 			# solve pick conflicts. this is quite easy, since each cell can be handled independently
 			while (pc = pick_conflicts.shift)
 				break if pc.empty?
-				puts "%s => %s" % pc
+				LOGGER.debug "%s => %s" % pc
 				cell, aa = pc
 				food_indices = []
 				cell.food.each_with_index do |v, i|
@@ -470,7 +480,7 @@ module ANZIM
 				ants = aa.keys.sort do |a1, a2|
 					Ant.food_priority_cmp(a1, a2)
 				end
-				puts "%s <= %s" % [ants, food_indices]
+				LOGGER.debug "%s <= %s" % [ants, food_indices]
 				# assign available food indices to ants following priority
 				until food_indices.empty? do
 					ant = ants.pop
@@ -499,7 +509,7 @@ module ANZIM
 				while changed
 					changed = false
 					motion_conflicts.each do |cell, aa|
-						puts "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
+						LOGGER.debug "%s want to move to %s" % [aa.keys.map { |a| a.id }, cell]
 
 						# count the number of places that are surely available
 						# and the number of places that are surely NOT available
@@ -533,7 +543,7 @@ module ANZIM
 							end
 						end
 
-						puts "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, aa.size]
+						LOGGER.debug "%s has %s avail, %s blocked, %s wanting" % [cell, available, blocked, aa.size]
 
 						throw "wtf avail/block" if available < 0 or available > 2 or blocked < 0 or blocked > 2
 
@@ -543,7 +553,7 @@ module ANZIM
 							Ant.motion_priority_cmp(a1, a2, aa)
 						end
 
-						puts "sorted: %s" % [ants.map { |a| a.id }]
+						LOGGER.debug "sorted: %s" % [ants.map { |a| a.id }]
 
 						# discard all but the last 2, regardless of other conditions,
 						# since there can't be more than 2 ants moving in anyway
@@ -551,7 +561,7 @@ module ANZIM
 							ant = ants.shift
 							discarded[ant] = aa[ant]
 							aa.delete ant
-							puts "discarding %s, in excess" % [ant.id]
+							LOGGER.debug "discarding %s, in excess" % [ant.id]
 							changed = true
 						end
 
@@ -562,7 +572,7 @@ module ANZIM
 							ant = ants.shift
 							discarded[ant] = aa[ant]
 							aa.delete ant
-							puts "discarding %s, blocked" % [ant.id]
+							LOGGER.debug "discarding %s, blocked" % [ant.id]
 							blocked -= 1
 							changed = true
 						end
@@ -572,7 +582,7 @@ module ANZIM
 							ant = ants.pop
 							accepted[ant] = aa[ant]
 							aa.delete ant
-							puts "accepting %s, available" % [ant.id]
+							LOGGER.debug "accepting %s, available" % [ant.id]
 							# update avail/block
 							available -= 1
 							blocked += 1
@@ -584,13 +594,16 @@ module ANZIM
 					end
 				end
 				if motion_conflicts.size > 0
-					puts "motion conflict loop detection"
-					motion_conflicts.each do |cell, aa|
-						ants = aa.keys
-						puts "%s => %s" % [
-							ants.map { |a| [a.id, a.cell.rowcol] },
-							cell
-						]
+					LOGGER.debug do
+						str = "motion conflict loop detection\n"
+						motion_conflicts.each do |cell, aa|
+							ants = aa.keys
+							str += "%s => %s\n" % [
+								ants.map { |a| [a.id, a.cell.rowcol] },
+								cell
+							]
+						end
+						str
 					end
 					# loop accumulator. key is the cell,
 					# value is the ant => action map involved
@@ -608,29 +621,34 @@ module ANZIM
 						# this should also be a cell involved
 						# in the conflict
 						unless motion_conflicts.key? cell
-							cloop.each do |cell, aa|
-								ants = aa.keys
-								puts "%s => %s" % [
-									ants.map { |a| [a.id, a.cell.rowcol] },
-									cell
-								]
+							LOGGER.error do
+								str = ""
+								cloop.each do |cell, aa|
+									ants = aa.keys
+									str +="%s => %s\n" % [
+										ants.map { |a| [a.id, a.cell.rowcol] },
+										cell
+									]
+								end
+								str
 							end
-							STDOUT.flush
 							throw "wtf motion"
 						end
 						aa = motion_conflicts[cell]
 					end
-					puts "loop found"
 					# when we get there, cell is a cell in the loop
 					# we can then accept all the ant actions in the loop
-					cloop.each do |cell, aa|
-						ants = aa.keys
-						puts "%s => %s" % [
-							ants.map { |a| [a.id, a.cell.rowcol] },
-							cell
-						]
+					LOGGER.debug do
+						str = "loop found\n"
+						cloop.each do |cell, aa|
+							ants = aa.keys
+							str += "%s => %s\n" % [
+								ants.map { |a| [a.id, a.cell.rowcol] },
+								cell
+							]
+						end
+						str
 					end
-					STDOUT.flush
 					while cloop.key? cell
 						aa = cloop[cell]
 						throw "wtf loop" if aa.size != 1
@@ -645,19 +663,25 @@ module ANZIM
 				end
 			end
 
-			puts "discarded:"
-			discarded.each do |ant, action|
-				puts "\tant %u in %s: %s %s" % [
-					ant.id, ant.cell.rowcol,
-					action.first, action.last
-				]
+			LOGGER.debug do
+				str = "discarded:\n"
+				discarded.each do |ant, action|
+					str += "\tant %u in %s: %s %s\n" % [
+						ant.id, ant.cell.rowcol,
+						action.first, action.last
+					]
+				end
+				str
 			end
-			puts "accepted:"
-			accepted.each do |ant, action|
-				puts "\tant %u in %s: %s %s" % [
-					ant.id, ant.cell.rowcol,
-					action.first, action.last
-				]
+			LOGGER.debug do
+				str = "accepted:\n"
+				accepted.each do |ant, action|
+					str += "\tant %u in %s: %s %s\n" % [
+						ant.id, ant.cell.rowcol,
+						action.first, action.last
+					]
+				end
+				str
 			end
 
 			return accepted
@@ -746,7 +770,7 @@ module ANZIM
 			rx = rand(3) - 1
 			cx = rand(3) - 1
 			if rx != 0  or cx != 0
-				puts "rx %u cx %u => bailing" % [rx, cx]
+				LOGGER.debug "rx %u cx %u => bailing" % [rx, cx]
 				return
 			end
 
@@ -760,8 +784,8 @@ module ANZIM
 			rowroll = rand(@rowchancetotal)
 			colroll = rand(@colchancetotal)
 
-			puts "row: %u\tin %s" % [rowroll, @rowchance]
-			puts "col: %u\tin %s" % [colroll, @colchance]
+			LOGGER.debug "row: %u\tin %s" % [rowroll, @rowchance]
+			LOGGER.debug "col: %u\tin %s" % [colroll, @colchance]
 
 			@rowchance.each_with_index.inject(0) do |sum, (c, idx)|
 				sum += c
@@ -781,13 +805,13 @@ module ANZIM
 				sum
 			end
 
-			puts "( %u/%u, %u/%u )" % [rowcand, ws, colcand, ws]
+			LOGGER.debug "( %u/%u, %u/%u )" % [rowcand, ws, colcand, ws]
 
 			cc = self.cell(rowcand, colcand)
 
 			# only generate food if not nest and there are no ants
 			unless cc.nest.nil? and cc.ants.empty?
-				puts "nest: %s, ants: %s => bailing" % [cc.nest, cc.ants]
+				LOGGER.debug "nest: %s, ants: %s => bailing" % [cc.nest, cc.ants]
 				return
 			end
 
@@ -802,12 +826,12 @@ module ANZIM
 				end
 			end
 			if indices.empty?
-				puts "%s: cell full => bailing" % [cc.food]
+				LOGGER.debug "%s: cell full => bailing" % [cc.food]
 				return
 			end
 
 			idx = indices.shuffle.first
-			puts "food package %u in %s" % [idx, indices]
+			LOGGER.debug "food package %u in %s" % [idx, indices]
 			self.add_food(cc, idx)
 		end
 
