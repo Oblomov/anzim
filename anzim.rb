@@ -137,6 +137,37 @@ module ANZIM
 			return is_horzvert(@last_motion_dir)
 		end
 
+		# class method to sort ants by food picking priority
+		def self.food_priority_cmp(a1, a2)
+			# who was there has priority
+			cond = (a1.was_there <=> a2.was_there)
+			# horz/vert motion has priority
+			cond = (a1.last_motion_horzvert <=> a2.last_motion_horzvert) if cond == 0
+			# higher weight in last motion has priority
+			cond = (a1.last_motion_weight <=> a2.last_motion_weight) if cond == 0
+			# younger (higher id) has priority
+			cond = (a1.id <=> a2.id) if cond == 0
+			throw "wtf %s <=> %s" % [a1, a2] if cond == 0
+			cond
+		end
+
+		# class method to sort ants by motion priority
+		# parameters: a1, a2 ants, aa action hash
+		def self.motion_priority_cmp(a1, a2, aa)
+			# horz/vert motion has priority
+			cond = (a1.is_horzvert(aa[a1][2]) <=> a2.is_horzvert(aa[a2][2]))
+			# with food has higher priortiy
+			cond = (a1.has_food <=> a2.has_food) if cond == 0
+			# lower health has higher priority (note the a1/a2 swap)
+			cond = (a2.health <=> a1.health) if cond == 0
+			# higher weight in motion has priority
+			cond = (aa[a1][1] <=> aa[a2][1]) if cond == 0
+			# younger (higher id) has priority
+			cond = (a1.id <=> a2.id) if cond == 0
+			throw "wtf %s <=> %s" % [a1, a2] if cond == 0
+			cond
+		end
+
 		# check if we are hungry
 		def hungry?
 			@health < @world.options[:af]/2
@@ -437,16 +468,7 @@ module ANZIM
 				end
 				# sort ants by priority
 				ants = aa.keys.sort do |a1, a2|
-					# who was there has priority
-					cond = (a1.was_there <=> a2.was_there)
-					# horz/vert motion has priority
-					cond = (a1.last_motion_horzvert <=> a2.last_motion_horzvert) if cond == 0
-					# higher weight in last motion has priority
-					cond = (a1.last_motion_weight <=> a2.last_motion_weight) if cond == 0
-					# younger (higher id) has priority
-					cond = (a1.id <=> a2.id) if cond == 0
-					throw "wtf %s <=> %s" % [a1, a2] if cond == 0
-					cond
+					Ant.food_priority_cmp(a1, a2)
 				end
 				puts "%s <= %s" % [ants, food_indices]
 				# assign available food indices to ants following priority
@@ -516,18 +538,7 @@ module ANZIM
 					# sort ants by priority, to make it easier to cut out the ones that
 					# can surely move in and those that surely cannot
 					ants = aa.keys.sort do |a1, a2|
-						# horz/vert motion has priority
-						cond = (a1.is_horzvert(aa[a1][2]) <=> a2.is_horzvert(aa[a2][2]))
-						# with food has higher priortiy
-						cond = (a1.has_food <=> a2.has_food) if cond == 0
-						# lower health has higher priority (note the a1/a2 swap)
-						cond = (a2.health <=> a1.health) if cond == 0
-						# higher weight in motion has priority
-						cond = (aa[a1][1] <=> aa[a2][1]) if cond == 0
-						# younger (higher id) has priority
-						cond = (a1.id <=> a2.id) if cond == 0
-						throw "wtf %s <=> %s" % [a1, a2] if cond == 0
-						cond
+						Ant.motion_priority_cmp(a1, a2, aa)
 					end
 
 					puts "sorted: %s" % [ants.map { |a| a.id }]
