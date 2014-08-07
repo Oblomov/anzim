@@ -323,8 +323,8 @@ module ANZIM
 			@cell = _cell
 			@next_ant = 0
 			# start with enough food to generate a line of ants as long
-			# as the world
-			@food = @world.options[:af]*@world.options[:ws]
+			# as the world, plus a full neighborhood of the nest
+			@food = @world.options[:af]*(@world.options[:ws]+8)
 		end
 
 		# generate ant. this is called by the world if there aren't
