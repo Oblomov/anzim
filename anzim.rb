@@ -981,6 +981,7 @@ module ANZIM
 			style = <<-STYLE
 			<style>
 				.ant{fill:black;stroke:red}
+				.ant text{fill:white;stroke:none;font-size:5px;text-anchor:middle}
 				.food,.dead .ant{fill:green;stroke:darkgreen}
 				.nest{fill:navy;stroke:gray}
 				.cell{stroke:lightgray}
@@ -1075,7 +1076,14 @@ module ANZIM
 						else
 							angle = ""
 						end
-						groups << "<use xlink:href='#ant' transform='translate(#{x},#{y})#{angle}' />"
+						groups << "<g id='ant#{ant.id}' class='ant' transform='translate(#{x},#{y})#{angle}'>"
+						groups << "\t<use xlink:href='#ant'/>"
+						if ant.food > 0
+							scale = ant.food/@options[:bf]
+							groups << "<use xlink:href='#food' transform='scale(#{scale})' />"
+						end
+						groups << "\t<text y='#{dy/2}'>#{ant.id}</text>"
+						groups << "</g>"
 						x += dx
 					end
 
