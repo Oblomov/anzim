@@ -326,7 +326,7 @@ module ANZIM
 	end
 
 	class Nest
-		attr_reader :world, :cell
+		attr_reader :world, :cell, :next_ant
 		attr_accessor :food
 		def initialize(_world, _cell)
 			@world = _world
@@ -954,7 +954,7 @@ module ANZIM
 
 		# width/height of a cell in SVG units
 		SVGU = 32
-		PADDING = SVGU/2
+		PADDING = SVGU/4
 		INFOW = 256
 		DIR_ANGLE = {
 			[0, 0] => 0,
@@ -971,11 +971,13 @@ module ANZIM
 		def svg(where=STDOUT)
 			ws = @options[:ws]
 
+			gridsize = ws*SVGU
+
 			# add infobox width and padding
 			header = "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='-%u -%u %u %u'>" % [
 				PADDING, PADDING,
-				ws*SVGU + INFOW + 2*PADDING,
-				ws*SVGU + 2*PADDING
+				gridsize + INFOW + 3*PADDING, # include padding between world and infobox
+				gridsize + 2*PADDING
 			]
 			footer = "</svg>"
 			style = <<-STYLE
@@ -985,6 +987,8 @@ module ANZIM
 				.food,.dead .ant{fill:green;stroke:darkgreen}
 				.nest{fill:navy;stroke:gray}
 				.cell{stroke:lightgray}
+				.info text {font-size: 10px}
+				.info .head {font-weight: bold}
 				.tracer0{fill:#fff}
 				.tracer1{fill:#ffe}
 				.tracer2{fill:#ffd}
@@ -1015,6 +1019,8 @@ module ANZIM
 			cells = []
 			# other elements, next
 			groups = []
+			# information about the elements, next
+			infos = ["<g id='infobox' transform='translate(#{gridsize+PADDING})'>"]
 
 			ws.times do |row|
 				ws.times do |col|
@@ -1036,9 +1042,45 @@ module ANZIM
 					else
 						tracer = "tracer0"
 					end
-					cells << "<use id='cell#{row}_#{col}' x='#{cx}' y='#{cy}' class='#{tracer}' xlink:href='#cell'/>"
+					id = "cell#{row}_#{col}"
+					cells << "<use id='#{id}' x='#{cx}' y='#{cy}' class='#{tracer}' xlink:href='#cell'/>"
 
-					next unless cc # done if the cell has not been allocated yet
+					# cell info
+					infos << "<g id='info_#{id}' visibility='hidden' class='info'>"
+					trow = 16
+					infos << "<text y='#{trow}'><tspan class='head'>Cell: </tspan>row #{row}, col #{col}</text>"
+					trow += 16
+
+					infoclose = [
+						"<set attributeName='visibility' to='visible' begin='#{id}.mouseover'/>",
+						"<set attributeName='visibility' to='hidden' begin='#{id}.mouseout'/>",
+						"</g>"
+					]
+
+					total_food_pkgs = cc ? cc.food.inject(0,:+) : 0
+
+					# done unless we have something else to show
+					if cc.nil? or (nest.nil? and total_food_pkgs == 0 and cc.ants.length == 0 and cc.tracer == 0)
+						infos += infoclose
+						next
+					end
+
+					if nest
+						infos << "<text y='#{trow}'><tspan class='head'>Nest: </tspan>#{nest.food} food, #{nest.next_ant} ants</text>"
+					elsif total_food_pkgs > 0
+						foodtxt = []
+						foodtxt << "#{cc.food.first} dead ants" if cc.food.first > 0
+						foodtxt << "#{cc.food.drop(1)} packages" if total_food_pkgs > cc.food.first
+						infos << "<text y='#{trow}'><tspan class='head'>Food: </tspan>#{foodtxt.join(', ')}</text>"
+					end
+					trow += 16
+					infos << "<text y='#{trow}'><tspan class='head'>Tracer: </tspan>#{cc.tracer}</text>"
+					trow += 16
+					if cc.ants.length > 0
+						infos << "<text y='#{trow}'><tspan class='head'>Ants: </tspan>#{cc.ants.map { |a| a.id }.join(', ')}</text>"
+						trow += 16
+					end
+					infos += infoclose
 
 					# stuff in the cell
 					groups << "<g id='row#{row}col#{col}' transform='translate(#{cx},#{cy})'>"
@@ -1096,7 +1138,9 @@ module ANZIM
 				end
 			end
 
-			svg = [header, style, defs, *cells, *groups, footer].join("\n")
+			infos << "</g>"
+
+			svg = [header, style, defs, *cells, *groups, *infos, footer].join("\n")
 
 			where.puts svg
 
